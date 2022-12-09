@@ -1,5 +1,7 @@
 # SRaft
 
+> It was not stable now
+
 ## Usage
 
 
