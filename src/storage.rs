@@ -26,9 +26,9 @@ pub trait StorageEngine {
     fn get(&self, path: String) -> Option<&String>;
 
     /**
-    Return a mutable reference to the value corresponding to the path.
+    Return a clone value to the value corresponding to the path.
      */
-    fn get_mut(&self, path: String) -> Option<&mut String>;
+    fn get_clone(&self, path: String) -> Option<String>;
 
     /**
     Removes a path from the storage engine, returning the value at the path if the path was
@@ -59,7 +59,15 @@ pub trait StorageEngine {
      */
     fn size(&self) -> usize;
 
+    /**
+    Return the key list.
+    // TODO: It may be a iterator batter.
+    */
     fn keys(&self, pattern: String) -> Vec<String>;
 
+    /**
+    Return the entry list.
+    // TODO: It may be a iterator batter.
+    */
     fn entries(&self, key_pattern: String) -> Vec<(String, String)>;
 }
