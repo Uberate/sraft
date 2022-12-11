@@ -6,9 +6,7 @@ good idea. But the Big-Data, the disk is only way.
 Every one who use this repo can custom themselves storage implements. For the repo organized and
 layout, I suggest to implements them in `plugins` dir.
  */
-pub mod storage {}
 
-use std::result::Iter;
 use crate::config::ConfigAble;
 use crate::plugins;
 

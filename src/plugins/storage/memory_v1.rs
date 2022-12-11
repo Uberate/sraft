@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::intrinsics::discriminant_value;
 use crate::config::ConfigAble;
 use crate::storage::StorageEngine;
 
@@ -49,7 +48,7 @@ impl Engine {
 
 impl StorageEngine for Engine {
     fn set(&mut self, path: String, value: String) {
-        self.map.insert(key, value);
+        self.map.insert(path, value);
     }
 
     fn get(&self, path: &String) -> Option<&String> {
