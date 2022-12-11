@@ -10,37 +10,57 @@ pub mod storage {}
 
 use std::result::Iter;
 use crate::config::ConfigAble;
+use crate::plugins;
+
+/**
+Get a storage engine by specify type and version.
+
+If not found specify type and version, return [None].
+
+### Implementations list
+| Type | Version| Instance |
+| :--- | :---: | :--- |
+| `memory` | `v1` | [plugins::storage::memory_v1::Engine] |
+
+
+ */
+pub fn new_engine(typ: String, version: String, config_able: &ConfigAble) -> Option<Box<dyn StorageEngine>> {
+    let id = (typ.as_str(), version.as_str());
+
+    match id {
+        ("memory", "v1") => { Some(plugins::storage::memory_v1::Engine::new(config_able)) }
+        _ => { None }
+    }
+}
 
 /**
 StorageEngine is a interface to define the storage ability sraft need. The storage should
 provide the Key-Value save. The key was the path.
  */
 pub trait StorageEngine {
-    fn new(&self, config: ConfigAble) -> Box<dyn StorageEngine>;
-
-    fn set(&mut self, key: String, value: String);
+    fn set(&mut self, path: String, value: String);
 
     /**
     Returns a reference to the value corresponding to the key.
      */
-    fn get(&self, path: String) -> Option<&String>;
+    fn get(&self, path: &String) -> Option<&String>;
 
     /**
     Return a clone value to the value corresponding to the path.
      */
-    fn get_clone(&self, path: String) -> Option<String>;
+    fn get_mut(&mut self, path: &String) -> Option<& mut String>;
 
     /**
     Removes a path from the storage engine, returning the value at the path if the path was
     previously in the storage engine.
      */
-    fn remove(&mut self, path: String) -> Option<String>;
+    fn remove(&mut self, path: &String) -> Option<String>;
 
     /**
     Removes a path from the map, returning the stored path and value if the path was previously in
     the storage engine.
      */
-    fn remove_entry(&mut self, path: String) -> Option<(String, String)>;
+    fn remove_entry(&mut self, path: &String) -> Option<(String, String)>;
 
     /**
     Returns the number of elements in the storage engine.
@@ -62,12 +82,12 @@ pub trait StorageEngine {
     /**
     Return the key list.
     // TODO: It may be a iterator batter.
-    */
+     */
     fn keys(&self, pattern: String) -> Vec<String>;
 
     /**
     Return the entry list.
     // TODO: It may be a iterator batter.
-    */
+     */
     fn entries(&self, key_pattern: String) -> Vec<(String, String)>;
 }
