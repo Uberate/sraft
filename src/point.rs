@@ -1,5 +1,6 @@
-use std::fmt::{Debug, Error};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::result::Result as sResult;
+use std::error::Error as sErr;
 use serde::{Deserialize, Serialize};
 use serde_json::Result;
 use crate::config::ConfigAble;
@@ -9,10 +10,13 @@ The mod point abstract the RPC(Remote process call). The sraft not care the impl
  */
 
 pub trait PointEngine {
-    fn server(name: String, config_able: ConfigAble) -> Box<dyn Server>;
-    fn client(name: String, config_able: ConfigAble) -> Box<dyn Client>;
+    fn server(id: String, config_able: ConfigAble) -> Box<dyn Server>;
+    fn client(id: String, config_able: ConfigAble) -> Box<dyn Client>;
 }
 
+/**
+SendMessage package the message from client to server.
+ */
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SendMessage {
     pub source: String,
@@ -49,8 +53,8 @@ impl SendMessage {
         }
     }
 
-    fn generator_receive_message(&self) -> ReceiveMessage {
-        ReceiveMessage {
+    fn generator_receive_message(&self) -> ResponseMessage {
+        ResponseMessage {
             source: self.target.clone(),
             target: self.source.clone(),
             // Get now nano second. From UNIX_EPOCH.
@@ -61,8 +65,11 @@ impl SendMessage {
     }
 }
 
+/**
+ResponseMessage package the message from server to client.
+ */
 #[derive(Serialize, Deserialize)]
-pub struct ReceiveMessage {
+pub struct ResponseMessage {
     pub source: String,
     pub target: String,
 
@@ -70,14 +77,40 @@ pub struct ReceiveMessage {
     pub payload: String,
 
     pub send_message: SendMessage,
+    // todo: add the error message
 }
 
-impl ReceiveMessage {
+// todo its a error
+pub struct ErrMessage {
+
+}
+
+impl ResponseMessage {
     pub fn to_any<'a, T>(&'a self) -> Result<T> where T: Deserialize<'a> {
         serde_json::from_str(self.payload.as_str())
     }
+
+    pub fn send_message(&self) -> SendMessage {
+        self.send_message.clone()
+    }
+
+    pub fn duration(&self) -> u128 {
+        self.create_at - self.send_message.create_at
+    }
 }
 
-pub trait Client {}
+/**
+Client send message to [Server], and receive the [ResponseMessage] from [Server]. Any server should
+bind with a [Server]. But [Server] does not, one [Server] can bind more then one [Client].
+
+The [Client]'s kind and version should equals of [Server], if not, the request may be errors.
+ */
+pub trait Client {
+    fn id(&self) -> &String;
+    fn server_point(&self) -> &String;
+
+    // todo: add send_message function
+    // todo: add send_any function
+}
 
 pub trait Server {}
