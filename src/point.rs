@@ -1,9 +1,11 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::result::Result as sResult;
-use std::error::Error as sErr;
+use std::fmt::{Debug, Display, Formatter};
+use std::task::ready;
 use serde::{Deserialize, Serialize};
 use serde_json::Result;
 use crate::config::ConfigAble;
+use crate::error::ErrorMessage;
 
 /**
 The mod point abstract the RPC(Remote process call). The sraft not care the implements of the RPC.
@@ -42,7 +44,7 @@ impl SendMessage {
     }
 
     fn from_any<T>(source: String, target: String, value: &T) -> Result<SendMessage>
-        where T: Sized + Serialize {
+        where T: ?Sized + Serialize {
         match serde_json::to_string(value) {
             Ok(v) => {
                 Ok(SendMessage::from_string(source, target, v))
@@ -77,11 +79,6 @@ pub struct ResponseMessage {
     pub payload: String,
 
     pub send_message: SendMessage,
-    // todo: add the error message
-}
-
-// todo its a error
-pub struct ErrMessage {
 
 }
 
@@ -109,8 +106,17 @@ pub trait Client {
     fn id(&self) -> &String;
     fn server_point(&self) -> &String;
 
-    // todo: add send_message function
-    // todo: add send_any function
+    fn send_message(&self, send_message: SendMessage) -> sResult<ResponseMessage, ErrorMessage>;
+    fn ping(&self);
 }
 
-pub trait Server {}
+/**
+Server receive the message from [Client], and give a response to [Client].
+ */
+pub trait Server {
+    fn id(&self) -> &String;
+    fn point(&self) -> &String;
+
+    fn handler(&self, path: String, Fun: fn(SendMessage) -> sResult<ResponseMessage, ErrorMessage>);
+    fn run(&self) -> sResult<(), ErrorMessage>;
+}
