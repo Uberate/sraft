@@ -12,8 +12,8 @@ The mod point abstract the RPC(Remote process call). The sraft not care the impl
  */
 
 pub trait PointEngine {
-    fn server(id: String, config_able: ConfigAble) -> Box<dyn Server>;
-    fn client(id: String, config_able: ConfigAble) -> Box<dyn Client>;
+    fn server(config_able: ConfigAble) -> Box<dyn Server>;
+    fn client(config_able: ConfigAble) -> Box<dyn Client>;
 }
 
 /**
@@ -113,7 +113,8 @@ pub trait Client {
 /**
 Server receive the message from [Client], and give a response to [Client].
  */
-pub trait Server {
+
+pub trait Server: Serialize + Deserialize {
     fn id(&self) -> &String;
     fn point(&self) -> &String;
 
