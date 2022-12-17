@@ -3,6 +3,7 @@ package point
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"github.com/sirupsen/logrus"
 	"github.io/uberate/sraft/pkg/sraft"
 	"io/ioutil"
@@ -99,6 +100,8 @@ type HttpV1Server struct {
 	stopChan    chan bool
 	alreadyStop chan bool
 
+	logger *logrus.Logger
+
 	handlers map[string]sraft.Handler
 
 	// custom config
@@ -110,21 +113,27 @@ func (h *HttpV1Server) Name() string {
 }
 
 func (h *HttpV1Server) Handler(path string, hand sraft.Handler) {
-	h.handlers[path] = hand
+	if hand == nil {
+		// delete
+		delete(h.handlers, path)
+	} else {
+		h.handlers[path] = hand
+	}
 }
 
 func (h *HttpV1Server) Run() error {
 
-	if err := http.ListenAndServe(h.Point, h); err != nil {
-		return err
-	}
+	var err error
+	go func() {
+		err = http.ListenAndServe(h.Point, h)
+	}()
 
 	select {
 	case <-h.stopChan:
 	}
 
 	h.alreadyStop <- true
-	return nil
+	return err
 }
 
 func (h *HttpV1Server) Stop() error {
@@ -139,5 +148,48 @@ func (h *HttpV1Server) Stop() error {
 }
 
 func (h *HttpV1Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	writer.WriteHeader(http.StatusOK)
+	var receiveMessage *sraft.ReceiveMessage
+
+	if hand, ok := h.handlers[request.URL.Path]; ok {
+		requestBody, err := ioutil.ReadAll(request.Body)
+
+		if err != nil {
+			receiveMessage = sraft.QuickErrorReceiveMessage(http.StatusBadRequest, err)
+			goto QuickStop
+		}
+
+		sendMessage := sraft.SendMessage{}
+		if err := json.Unmarshal(requestBody, &sendMessage); err != nil {
+			receiveMessage = sraft.QuickErrorReceiveMessage(http.StatusBadRequest, err)
+			goto QuickStop
+		}
+
+		receiveMessage, err = hand(sendMessage)
+	} else {
+		receiveMessage = sraft.QuickErrorReceiveMessage(
+			http.StatusNotFound,
+			fmt.Errorf("Not found specify path: %s ", request.URL.Path),
+		)
+	}
+
+QuickStop:
+
+	// Not health request, should log it
+	if receiveMessage.Code() >= http.StatusBadRequest {
+		h.logger.Error(receiveMessage.ErrorMessage)
+	}
+
+	responseBody, err := json.Marshal(receiveMessage)
+	if err != nil {
+		// has any error, stop write directly
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	writer.WriteHeader(receiveMessage.Code())
+	if _, err := writer.Write(responseBody); err != nil {
+		h.logger.Error(err)
+		// can solve error, return directly
+		return
+	}
 }

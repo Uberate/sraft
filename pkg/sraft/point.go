@@ -31,13 +31,7 @@ func SendMessageFromAny(obj any) (SendMessage, error) {
 
 // ErrorMessage implement the error, and if contain the error info of server.
 type ErrorMessage struct {
-	code string
 	Info string
-}
-
-// Code return the code of ErrorMessage. The Code follower the http.status code .
-func (e ErrorMessage) Code() string {
-	return e.code
 }
 
 func (e ErrorMessage) Error() string {
@@ -46,7 +40,25 @@ func (e ErrorMessage) Error() string {
 
 // ReceiveMessage is the point server response of client.
 type ReceiveMessage struct {
-	Response map[string]interface{}
+	code         int
+	Response     map[string]interface{}
+	ErrorMessage ErrorMessage
+}
+
+// Code return the code of ErrorMessage. The Code follower the http.status code .
+func (e ReceiveMessage) Code() int {
+	return e.code
+}
+
+func QuickErrorReceiveMessage(code int, err error) *ReceiveMessage {
+	errMessage := ErrorMessage{
+		Info: err.Error(),
+	}
+
+	return &ReceiveMessage{
+		code:         code,
+		ErrorMessage: errMessage,
+	}
 }
 
 // ==================================== Define the point struct
