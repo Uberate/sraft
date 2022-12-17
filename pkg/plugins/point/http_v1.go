@@ -21,7 +21,7 @@ func (h HttpV1Engine) Name() string {
 	return HttpV1EngineKind
 }
 
-func (h HttpV1Engine) Client(id string, config sraft.AnyConfig, logger *logrus.Logger) (sraft.Client, error) {
+func (h HttpV1Engine) Client(id string, config sraft.AnyConfig, logger *logrus.Logger) (Client, error) {
 	client := HttpV1Client{
 		Id:     id,
 		Logger: logger,
@@ -34,7 +34,7 @@ func (h HttpV1Engine) Client(id string, config sraft.AnyConfig, logger *logrus.L
 	return &client, nil
 }
 
-func (h HttpV1Engine) Server(id string, config sraft.AnyConfig, logger *logrus.Logger) (sraft.Server, error) {
+func (h HttpV1Engine) Server(id string, config sraft.AnyConfig, logger *logrus.Logger) (Server, error) {
 	server := HttpV1Server{}
 
 	if err := config.ToAny(&server); err != nil {
@@ -57,7 +57,7 @@ func (h *HttpV1Client) Name() string {
 	return HttpV1EngineKind + ":" + h.Id
 }
 
-func (h *HttpV1Client) SendMessage(path string, message sraft.SendMessage) (*sraft.ReceiveMessage, error) {
+func (h *HttpV1Client) SendMessage(path string, message SendMessage) (*ReceiveMessage, error) {
 	requestJson, err := json.Marshal(message)
 	if err != nil {
 		return nil, err
@@ -78,7 +78,7 @@ func (h *HttpV1Client) SendMessage(path string, message sraft.SendMessage) (*sra
 		return nil, err
 	}
 
-	receiveMessage := &sraft.ReceiveMessage{}
+	receiveMessage := &ReceiveMessage{}
 	if err = json.Unmarshal(resBody, receiveMessage); err != nil {
 		return nil, err
 	}
@@ -87,8 +87,8 @@ func (h *HttpV1Client) SendMessage(path string, message sraft.SendMessage) (*sra
 
 }
 
-func (h *HttpV1Client) SendAny(path string, value any) (*sraft.ReceiveMessage, error) {
-	message, err := sraft.SendMessageFromAny(value)
+func (h *HttpV1Client) SendAny(path string, value any) (*ReceiveMessage, error) {
+	message, err := SendMessageFromAny(value)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ type HttpV1Server struct {
 
 	logger *logrus.Logger
 
-	handlers map[string]sraft.Handler
+	handlers map[string]Handler
 
 	// custom config
 	Point string
@@ -116,7 +116,7 @@ func (h *HttpV1Server) Name() string {
 	return HttpV1EngineKind
 }
 
-func (h *HttpV1Server) Handler(path string, hand sraft.Handler) {
+func (h *HttpV1Server) Handler(path string, hand Handler) {
 	if hand == nil {
 		// delete
 		delete(h.handlers, path)
@@ -152,25 +152,25 @@ func (h *HttpV1Server) Stop() error {
 }
 
 func (h *HttpV1Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	var receiveMessage *sraft.ReceiveMessage
+	var receiveMessage *ReceiveMessage
 
 	if hand, ok := h.handlers[request.URL.Path]; ok {
 		requestBody, err := ioutil.ReadAll(request.Body)
 
 		if err != nil {
-			receiveMessage = sraft.QuickErrorReceiveMessage(http.StatusBadRequest, err)
+			receiveMessage = QuickErrorReceiveMessage(http.StatusBadRequest, err)
 			goto QuickStop
 		}
 
-		sendMessage := sraft.SendMessage{}
+		sendMessage := SendMessage{}
 		if err := json.Unmarshal(requestBody, &sendMessage); err != nil {
-			receiveMessage = sraft.QuickErrorReceiveMessage(http.StatusBadRequest, err)
+			receiveMessage = QuickErrorReceiveMessage(http.StatusBadRequest, err)
 			goto QuickStop
 		}
 
 		receiveMessage, err = hand(sendMessage)
 	} else {
-		receiveMessage = sraft.QuickErrorReceiveMessage(
+		receiveMessage = QuickErrorReceiveMessage(
 			http.StatusNotFound,
 			fmt.Errorf("Not found specify path: %s ", request.URL.Path),
 		)

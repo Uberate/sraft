@@ -1,7 +1,6 @@
 package point
 
 import (
-	"github.io/uberate/sraft/pkg/sraft"
 	"github.io/uberate/sraft/tests"
 	"testing"
 	"time"
@@ -12,7 +11,7 @@ func QuickHttpV1Server() *HttpV1Server {
 		stopChan:    make(chan bool, 0),
 		alreadyStop: make(chan bool, 0),
 		logger:      tests.QuickTestLogger(),
-		handlers:    map[string]sraft.Handler{},
+		handlers:    map[string]Handler{},
 
 		Point: "127.0.0.1:9867",
 	}
