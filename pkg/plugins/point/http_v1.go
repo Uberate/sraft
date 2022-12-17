@@ -17,6 +17,10 @@ const HttpV1EngineKind = "http_v1"
 type HttpV1Engine struct {
 }
 
+func (h HttpV1Engine) Name() string {
+	return HttpV1EngineKind
+}
+
 func (h HttpV1Engine) Client(id string, config sraft.AnyConfig, logger *logrus.Logger) (sraft.Client, error) {
 	client := HttpV1Client{
 		Id:     id,

@@ -3,6 +3,7 @@ package sraft
 import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/sirupsen/logrus"
+	"github.io/uberate/sraft/pkg/plugins/point"
 )
 
 // ==================================== Handler define
@@ -65,6 +66,7 @@ func QuickErrorReceiveMessage(code int, err error) *ReceiveMessage {
 
 // Point define the protocol of TransLayout of RPC.
 type Point interface {
+	Name() string
 	Client(id string, config AnyConfig, logger *logrus.Logger) (Client, error)
 	Server(id string, config AnyConfig, logger *logrus.Logger) (Server, error)
 }
@@ -83,4 +85,15 @@ type Server interface {
 
 	Run() error
 	Stop() error
+}
+
+// ==================================== Points define
+
+var points = map[string]Point{
+	point.HttpV1Engine{}.Name(): point.HttpV1Engine{}, // HttpV1Engine
+}
+
+func GetPoint(name string) (Point, bool) {
+	res, ok := points[name]
+	return res, ok
 }
