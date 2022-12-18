@@ -3,7 +3,7 @@ package point
 import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/sirupsen/logrus"
-	"github.io/uberate/sraft/pkg/sraft"
+	"github.io/uberate/sraft/pkg/plugins"
 )
 
 // ==================================== Handler define
@@ -67,8 +67,8 @@ func QuickErrorReceiveMessage(code int, err error) *ReceiveMessage {
 // Point define the protocol of TransLayout of RPC.
 type Point interface {
 	Name() string
-	Client(id string, config sraft.AnyConfig, logger *logrus.Logger) (Client, error)
-	Server(id string, config sraft.AnyConfig, logger *logrus.Logger) (Server, error)
+	Client(id string, config plugins.AnyConfig, logger *logrus.Logger) (Client, error)
+	Server(id string, config plugins.AnyConfig, logger *logrus.Logger) (Server, error)
 }
 
 // Client is a protocol client, and Client only bind with one server, but server not care it.

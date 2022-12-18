@@ -1,6 +1,8 @@
 package storage
 
-import "github.io/uberate/sraft/pkg/sraft"
+import (
+	"github.io/uberate/sraft/pkg/plugins"
+)
 
 // Storage is the abstract of the storage layout. And the implements not care the thread-safe. That is the high layout
 // task.
@@ -10,7 +12,7 @@ type Storage interface {
 	Name() string
 
 	// SetConfig will set the config info of Storage implements. And re-init the implement.
-	SetConfig(config sraft.AnyConfig) error
+	SetConfig(config plugins.AnyConfig) error
 
 	// Size return the bytes of storage, if the Len() is zero, the Size should return zero.
 	//

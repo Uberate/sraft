@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/sirupsen/logrus"
-	"github.io/uberate/sraft/pkg/sraft"
+	"github.io/uberate/sraft/pkg/plugins"
 	"io/ioutil"
 	"net/http"
 )
@@ -21,7 +21,7 @@ func (h HttpV1Engine) Name() string {
 	return HttpV1EngineKind
 }
 
-func (h HttpV1Engine) Client(id string, config sraft.AnyConfig, logger *logrus.Logger) (Client, error) {
+func (h HttpV1Engine) Client(id string, config plugins.AnyConfig, logger *logrus.Logger) (Client, error) {
 	client := HttpV1Client{
 		Id:     id,
 		Logger: logger,
@@ -34,7 +34,7 @@ func (h HttpV1Engine) Client(id string, config sraft.AnyConfig, logger *logrus.L
 	return &client, nil
 }
 
-func (h HttpV1Engine) Server(id string, config sraft.AnyConfig, logger *logrus.Logger) (Server, error) {
+func (h HttpV1Engine) Server(id string, config plugins.AnyConfig, logger *logrus.Logger) (Server, error) {
 	server := HttpV1Server{}
 
 	if err := config.ToAny(&server); err != nil {

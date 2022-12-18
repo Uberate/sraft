@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"github.io/uberate/sraft/pkg/sraft"
+	"github.io/uberate/sraft/pkg/plugins"
 	"regexp"
 	"sync"
 )
@@ -16,7 +16,7 @@ func (m *MemoryV1Engine) Name() string {
 	return MemoryV1EngineName
 }
 
-func (m *MemoryV1Engine) SetConfig(config sraft.AnyConfig) error {
+func (m *MemoryV1Engine) SetConfig(config plugins.AnyConfig) error {
 	m.innerMap = sync.Map{}
 
 	return nil
