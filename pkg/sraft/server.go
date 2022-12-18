@@ -5,9 +5,16 @@ import (
 	"fmt"
 	"github.com/sirupsen/logrus"
 	"github.io/uberate/sraft/pkg/plugins"
+	"github.io/uberate/sraft/pkg/plugins/point"
 	"github.io/uberate/sraft/pkg/plugins/storage"
 	"strconv"
 	"time"
+)
+
+const (
+	DefaultInnerLogPath = "_inner"
+	DefaultDataLogPath  = "_data"
+	DefaultLogLogPath   = "_log"
 )
 
 // ServerConfig save all the server config(not contain the cluster config).
@@ -78,32 +85,38 @@ type ClusterElement struct {
 // Status:
 // The serve has three status: FollowerStatus CandidateStatus LeaderStatus. For more status detail see Status.
 type Server struct {
-	Id string
-
+	// raft value
 	currentTerm uint64
-	status      Status
-	logger      *logrus.Logger
+	logs        Logs
+	votedFor    string
 
-	logs     Logs
-	votedFor string
+	// server value
+	Id           string
+	logger       *logrus.Logger
+	status       Status
+	server       point.Server
+	serverConfig plugins.AnyConfig
+	serverKind   string
 
+	// storage value
 	dataStorage       storage.Storage
 	DataPath          string
 	DataStorageKind   string
 	DataStorageConfig plugins.AnyConfig
-
-	ClusterConfigPath string // CLusterConfigPath was storage in data storage.
-	ClusterConfig     ClusterConfig
-
-	logsStorage storage.Storage // LogStorage can use same storage from data.
-	LogsPath    string
-	// If LogStorageKind is empty, use dataStorage with LogPath, but the LogPath can't same with DataPath.
+	logsStorage       storage.Storage
+	LogsPath          string
 	LogsStorageKind   string
 	LogsStorageConfig plugins.AnyConfig
+
+	// cluster value
+	ClusterConfigPath string // CLusterConfigPath was storage in data storage.
+	ClusterConfig     ClusterConfig
+	ClusterClients    map[string]point.Client
 }
 
 func (s *Server) Init(config ServerConfig) error {
 
+	// ==================================== init logger
 	logger := config.LogConfig.ToLogger()
 	if logger == nil {
 		return fmt.Errorf("Log init error, stop init ")
@@ -113,15 +126,75 @@ func (s *Server) Init(config ServerConfig) error {
 		logger.Debugf("Init config: \n %s", string(configStr))
 	}
 
-	// init id
+	// ==================================== init id
 	s.Id = config.Id
 	if len(s.Id) == 0 {
 		logger.Warnf("Server.Id is nil, use now nano second as id.")
 		s.Id = strconv.FormatInt(time.Now().UnixNano(), 10)
 	}
 
-	// init storages
+	// ==================================== init storages
 	s.DataStorageKind = config.DataStorageKind
+	s.DataPath = config.DataStoragePath
+	s.DataStorageConfig = config.DataStorageConfig
+	if len(s.DataPath) == 0 {
+		logger.Warnf("Datas log-path is nil, use default value: [%s]", DefaultDataLogPath)
+		s.DataPath = DefaultDataLogPath
+	}
+	var ok bool
+	s.dataStorage, ok = storage.GetStorageEngine(s.DataStorageKind)
+	if !ok {
+		err := fmt.Errorf("Init data stroage fatal, can't find specify implement of storage: [%s],"+
+			" please check yout config [DataStorageKind] ", s.DataStorageKind)
+		logger.Fatal(err)
+		return err
+	}
+	if err := s.dataStorage.SetConfig(s.DataStorageConfig); err != nil {
+		err = fmt.Errorf("Init data storage with [DataStorageConfig] error: %s ", err.Error())
+		logger.Fatal(err)
+		return err
+	}
 
+	s.LogsStorageKind = config.LogsStorageKind
+	s.LogsPath = config.LogsStoragePath
+	s.LogsStorageConfig = config.LogsStorageConfig
+	if len(s.LogsPath) == 0 {
+		logger.Warnf("Logs log-path is nil, use default value: [%s]", DefaultLogLogPath)
+		s.LogsPath = DefaultLogLogPath
+	}
+	s.logsStorage, ok = storage.GetStorageEngine(s.LogsStorageKind)
+	if !ok {
+		err := fmt.Errorf("Init log stroage fatal, can't find specify implement of storage: [%s],"+
+			" please check yout config [LogsStorageKind] ", s.LogsStorageKind)
+		logger.Fatal(err)
+		return err
+	}
+	if err := s.logsStorage.SetConfig(s.LogsStorageConfig); err != nil {
+		err = fmt.Errorf("Init log storage with [LogsStorageConfig] error: %s ", err.Error())
+		logger.Fatal(err)
+		return err
+	}
+
+	// ==================================== init point
+	s.serverKind = config.PointKind
+	s.serverConfig = config.PointConfig
+
+	if pointInstance, ok := point.GetPoint(s.serverKind); !ok {
+		err := fmt.Errorf("Get server point fatal, can't find specify implement of point: [%s],"+
+			" please check your config [PointKind] ", s.serverKind)
+		logger.Fatal(err)
+		return err
+	} else {
+		var err error
+		s.server, err = pointInstance.Server(s.Id, s.serverConfig, s.logger)
+		if err != nil {
+			err = fmt.Errorf("Init point with [PonitConfig] error: %s ", err.Error())
+			logger.Fatal(err)
+			return err
+		}
+	}
+	// ==================================== init cluster info
+
+	logger.Info("Server init done")
 	return nil
 }

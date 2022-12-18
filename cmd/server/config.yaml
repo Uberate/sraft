@@ -1,8 +1,36 @@
 # Default config for sraft server
-Id: ""
+Id: "First test"
 LogConfig:
   DisableTimestamp: false
   DisableColor: false
   FullTimestamp: true
-  Level: Debug
+  Level: Trace
   TimestampFormat: "2006-01-02T15:04:05Z07:00"
+
+## ======================== Server point config
+PointKind: http_v1
+PointConfig:
+  config:
+    Point: 127.0.0.1:3000
+
+## ======================== Data storage configs
+
+## DataStorageKind, to specify how to storage the data.
+##
+## Data storage kinds:
+## memory_v1: Quick and data not safe on machine.
+DataStorageKind: memory_v1
+
+## DataStoragePath define the data path in storage. Default is _data.
+DataStoragePath: _data
+
+## Different storage has different configs, for more detail, see TODO
+DataStorageConfig:
+  Empty: empty
+
+## ======================== Log storage configs
+
+## See config: [DataStorageKind]
+LogsStorageKind: memory_v1
+## See config: [DataStoragePath]
+LogsStoragePath: _log
