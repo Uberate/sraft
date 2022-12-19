@@ -112,15 +112,21 @@ type Server struct {
 	ClusterConfigPath string // CLusterConfigPath was storage in data storage.
 	ClusterConfig     ClusterConfig
 	ClusterClients    map[string]point.Client
+
+	// channels
+	StopChan chan bool
 }
 
 func (s *Server) Init(config ServerConfig) error {
+
+	s.StopChan = make(chan bool, 0)
 
 	// ==================================== init logger
 	logger := config.LogConfig.ToLogger()
 	if logger == nil {
 		return fmt.Errorf("Log init error, stop init ")
 	}
+	s.logger = logger
 
 	if configStr, err := json.Marshal(config); err == nil {
 		logger.Debugf("Init config: \n %s", string(configStr))
@@ -197,4 +203,24 @@ func (s *Server) Init(config ServerConfig) error {
 
 	logger.Info("Server init done")
 	return nil
+}
+
+func (s *Server) Run() error {
+	// start the server
+	go func() {
+		if err := s.server.Run(); err != nil {
+			s.StopChan <- true
+			s.logger.Error(err)
+			return
+		}
+	}()
+
+	select {
+	case <-s.StopChan:
+		if err := s.server.Stop(); err != nil {
+			return err
+		}
+		// do stop
+		return nil
+	}
 }

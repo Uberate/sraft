@@ -35,7 +35,12 @@ func (h HttpV1Engine) Client(id string, config plugins.AnyConfig, logger *logrus
 }
 
 func (h HttpV1Engine) Server(id string, config plugins.AnyConfig, logger *logrus.Logger) (Server, error) {
-	server := HttpV1Server{}
+	server := HttpV1Server{
+		stopChan:    make(chan bool, 0),
+		alreadyStop: make(chan bool, 0),
+		logger:      logger,
+		handlers:    map[string]Handler{},
+	}
 
 	if err := config.ToAny(&server); err != nil {
 		return nil, err
@@ -101,12 +106,12 @@ func (h *HttpV1Client) SendAny(path string, value any) (*ReceiveMessage, error) 
 type HttpV1Server struct {
 	// private values
 
-	stopChan    chan bool
-	alreadyStop chan bool
+	stopChan    chan bool `mapstructure:"-"`
+	alreadyStop chan bool `mapstructure:"-"`
 
-	logger *logrus.Logger
+	logger *logrus.Logger `mapstructure:"-"`
 
-	handlers map[string]Handler
+	handlers map[string]Handler `mapstructure:"-"`
 
 	// custom config
 	Point string
