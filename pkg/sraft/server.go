@@ -12,9 +12,10 @@ import (
 )
 
 const (
-	DefaultInnerLogPath = "_inner"
-	DefaultDataLogPath  = "_data"
-	DefaultLogLogPath   = "_log"
+	DefaultInnerLogPath   = "_inner"
+	DefaultClusterLogPath = "_inner/cluster-config"
+	DefaultDataLogPath    = "_data"
+	DefaultLogLogPath     = "_log"
 )
 
 // ServerConfig save all the server config(not contain the cluster config).
@@ -23,6 +24,8 @@ type ServerConfig struct {
 
 	PointKind   string
 	PointConfig plugins.AnyConfig
+
+	ClusterConfig ClusterConfig
 
 	LogConfig LogConfig
 
@@ -73,7 +76,6 @@ type ClusterConfig struct {
 type ClusterElement struct {
 	Id           string
 	Kind         string
-	TargetPoint  string
 	ClientConfig plugins.AnyConfig
 }
 
@@ -200,8 +202,54 @@ func (s *Server) Init(config ServerConfig) error {
 		}
 	}
 	// ==================================== init cluster info
+	s.ClusterConfigPath = config.ClusterStoragePath
+	if len(s.ClusterConfigPath) == 0 {
+		s.logger.Warnf("Cluster log path is nil, use default: [%s]", DefaultClusterLogPath)
+		s.ClusterConfigPath = DefaultClusterLogPath
+	}
+	if s.ClusterConfigPath == s.DataPath {
+		err := fmt.Errorf("The ClusterStoragePath [%s] was same with DataStoragePath [%s], because ClusterConfig was use "+
+			"DataStorage, so the ClusterStoragePath should not equals DataStoragePath. ", s.ClusterConfigPath, s.DataPath)
+		s.logger.Error(err)
+		return err
+	}
+	if err := s.InitClusterPoints(config.ClusterConfig); err != nil {
+		return err
+	}
 
 	logger.Info("Server init done")
+	return nil
+}
+
+func (s *Server) InitClusterPoints(config ClusterConfig) error {
+	s.ClusterConfig = config
+	s.ClusterClients = map[string]point.Client{}
+
+	if len(s.ClusterConfig.ClusterElement) == 0 {
+		s.logger.Warnf("No cluster info, skip init.")
+		return nil
+	}
+
+	for _, pointConfig := range s.ClusterConfig.ClusterElement {
+		p, ok := point.GetPoint(pointConfig.Kind)
+		if !ok {
+			err := fmt.Errorf("Not found specify point: [%s] ", pointConfig.Kind)
+			s.logger.Error(err)
+			return err
+		}
+		client, err := p.Client(pointConfig.Id, pointConfig.ClientConfig, s.logger)
+		if err != nil {
+			s.logger.Error(err)
+			return err
+		}
+
+		s.logger.Infof("Init client point: [%s] with kind: [%s]", pointConfig.Id, pointConfig.Kind)
+
+		s.ClusterClients[pointConfig.Id] = client
+	}
+
+	// TODO ?register to cluster?
+
 	return nil
 }
 

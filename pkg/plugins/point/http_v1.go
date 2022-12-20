@@ -50,6 +50,10 @@ func (h HttpV1Engine) Server(id string, config plugins.AnyConfig, logger *logrus
 
 // ==================================== Client define
 
+// HttpV1Client is a simple point client.
+//
+// Params:
+// TargetPoint: String Specify a server point.
 type HttpV1Client struct {
 	Id     string         `mapstructure:"-"`
 	Logger *logrus.Logger `mapstructure:"-"`
@@ -103,6 +107,10 @@ func (h *HttpV1Client) SendAny(path string, value any) (*ReceiveMessage, error) 
 
 // ==================================== Server define
 
+// HttpV1Server was a simple point server
+//
+// Params:
+// Point: The network listen on it.
 type HttpV1Server struct {
 	// private values
 
