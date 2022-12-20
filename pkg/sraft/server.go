@@ -60,6 +60,7 @@ type LogConfig struct {
 	Level            string
 }
 
+// ToLogger return a logrus.Logger instance, use LogConfig init.
 func (lc LogConfig) ToLogger() *logrus.Logger {
 	logger := logrus.New()
 	logger.SetFormatter(&logrus.TextFormatter{
@@ -81,13 +82,19 @@ func (lc LogConfig) ToLogger() *logrus.Logger {
 	return logger
 }
 
+// ClusterConfig save the cluster config.
 type ClusterConfig struct {
+	// ClusterElement save all cluster member.
 	ClusterElement []ClusterElement
 }
 
+// ClusterElement describe a member in the cluster.
 type ClusterElement struct {
-	Id           string
-	Kind         string
+	// Id is the member id. The id should be same in different servers(because the leader check).
+	Id string
+	// Kind is the member point kind. Thd kind should be same with specify member point kind.
+	Kind string
+	// ClientConfig is the point.Client config.
 	ClientConfig plugins.AnyConfig
 }
 
@@ -274,6 +281,7 @@ func (s *Server) InitClusterPoints(config ClusterConfig) error {
 	return nil
 }
 
+// Run the server
 func (s *Server) Run() error {
 	// start the server
 	go func() {
