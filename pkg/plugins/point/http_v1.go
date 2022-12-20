@@ -175,13 +175,15 @@ func (h *HttpV1Server) ServeHTTP(writer http.ResponseWriter, request *http.Reque
 			goto QuickStop
 		}
 
-		sendMessage := SendMessage{}
+		sendMessage := SendMessage{
+			Body: map[string]interface{}{},
+		}
 		if err := json.Unmarshal(requestBody, &sendMessage); err != nil {
 			receiveMessage = QuickErrorReceiveMessage(http.StatusBadRequest, err)
 			goto QuickStop
 		}
 
-		receiveMessage, err = hand(sendMessage)
+		receiveMessage = hand(request.URL.Path, sendMessage)
 	} else {
 		receiveMessage = QuickErrorReceiveMessage(
 			http.StatusNotFound,
@@ -192,7 +194,7 @@ func (h *HttpV1Server) ServeHTTP(writer http.ResponseWriter, request *http.Reque
 QuickStop:
 
 	// Not health request, should log it
-	if receiveMessage.Code() >= http.StatusBadRequest {
+	if receiveMessage.Code >= http.StatusBadRequest {
 		h.logger.Error(receiveMessage.ErrorMessage)
 	}
 
@@ -203,7 +205,7 @@ QuickStop:
 		return
 	}
 
-	writer.WriteHeader(receiveMessage.Code())
+	writer.WriteHeader(receiveMessage.Code)
 	if _, err := writer.Write(responseBody); err != nil {
 		h.logger.Error(err)
 		// can solve error, return directly

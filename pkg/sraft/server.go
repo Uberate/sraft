@@ -7,7 +7,9 @@ import (
 	"github.io/uberate/sraft/pkg/plugins"
 	"github.io/uberate/sraft/pkg/plugins/point"
 	"github.io/uberate/sraft/pkg/plugins/storage"
+	"net/http"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -16,6 +18,16 @@ const (
 	DefaultClusterLogPath = "_inner/cluster-config"
 	DefaultDataLogPath    = "_data"
 	DefaultLogLogPath     = "_log"
+
+	NeedLeader      = true
+	NotNeedLeader   = false
+	NeedHighTerm    = true
+	NotNeedHighTerm = false
+	CanProxy        = true
+	NotProxy        = false
+
+	ErrRequestNeedLeaderStatus = "request need leader status to send"
+	ErrRequestNeedHighTerm     = "request need high term"
 )
 
 // ServerConfig save all the server config(not contain the cluster config).
@@ -87,6 +99,8 @@ type ClusterElement struct {
 // Status:
 // The serve has three status: FollowerStatus CandidateStatus LeaderStatus. For more status detail see Status.
 type Server struct {
+	singleLock *sync.Mutex
+
 	// raft value
 	currentTerm uint64
 	logs        Logs
@@ -120,6 +134,9 @@ type Server struct {
 }
 
 func (s *Server) Init(config ServerConfig) error {
+
+	s.singleLock = &sync.Mutex{}
+	s.currentTerm = 0
 
 	s.StopChan = make(chan bool, 0)
 
@@ -201,6 +218,10 @@ func (s *Server) Init(config ServerConfig) error {
 			return err
 		}
 	}
+
+	// register handlers
+	s.server.Handler(s.PreHandle("/sraft/request-vote", NotProxy, NotNeedLeader, NeedHighTerm, s.VoteRequest))
+
 	// ==================================== init cluster info
 	s.ClusterConfigPath = config.ClusterStoragePath
 	if len(s.ClusterConfigPath) == 0 {
@@ -271,4 +292,89 @@ func (s *Server) Run() error {
 		// do stop
 		return nil
 	}
+}
+
+// ==================================== Requests handler
+
+type CommonSRaftRequest struct {
+	CurrentTerm uint64
+	RequestId   string
+}
+
+type VoteReceiveObject struct {
+	CanVote bool
+}
+
+// PreHandle can generate a sraft handler
+//
+// leaderProxy: Enable proxy request to leader, if it was NotProxy, use self handler. Else use CanProxy, will try to
+//				send request to leader.
+// leaderCheck: Enable check the request id, if not the leader, return 403 directly, is request is sent from leader,
+//				use self handle. (Value: NeedLeader, NotNeedLeader)
+// termCheck: 	Enable check the term value, if is less or equals to self currentTerm, forbidden request direct.
+//				(Value: NeedHighTerm, NotNeedHighTerm)
+func (s *Server) PreHandle(path string, leaderProxy, leaderCheck, termCheck bool, handler point.Handler) (string, point.Handler) {
+	// todo, not the vote stage and not the cluster update stage
+	return path, func(path string, message point.SendMessage) *point.ReceiveMessage {
+
+		s.singleLock.Lock()
+		defer s.singleLock.Unlock()
+
+		s.logger.Debugf("Receive a request with path: [%s], leader proxy: [%v], leader check: [%v], term check"+
+			": [%v]", path, leaderProxy, leaderCheck, termCheck)
+		if leaderProxy {
+			if s.status != LeaderStatus {
+				// not the leader, need proxy the request to leader.
+				if client, ok := s.ClusterClients[s.votedFor]; ok {
+					receive, err := client.SendMessage(path, message)
+					if err != nil {
+						receive.ErrorMessage.Info = err.Error()
+					}
+
+					return receive
+				} else {
+					return point.QuickErrorReceiveMessage(http.StatusNotFound, fmt.Errorf("no leader found"))
+				}
+			}
+		}
+
+		if leaderCheck || termCheck {
+			commonRequest := CommonSRaftRequest{}
+			if err := message.ToAny(&commonRequest); err != nil {
+				return point.QuickErrorReceiveMessage(http.StatusBadRequest, err)
+			}
+
+			if leaderCheck {
+				if commonRequest.RequestId != s.votedFor {
+					return point.QuickErrorReceiveMessage(http.StatusForbidden, fmt.Errorf(ErrRequestNeedLeaderStatus))
+				}
+			}
+
+			if termCheck {
+				if commonRequest.CurrentTerm <= s.currentTerm {
+					return point.QuickErrorReceiveMessage(http.StatusForbidden, fmt.Errorf(ErrRequestNeedHighTerm))
+				}
+			}
+		}
+
+		return handler(path, message)
+	}
+}
+
+func (s *Server) VoteRequest(path string, message point.SendMessage) *point.ReceiveMessage {
+	voteRequest := CommonSRaftRequest{}
+	if err := message.ToAny(&voteRequest); err != nil {
+		return point.QuickErrorReceiveMessage(http.StatusBadRequest, fmt.Errorf("Parse body error: %s ", err))
+	}
+
+	res := VoteReceiveObject{
+		CanVote: true,
+	}
+
+	receiveMessage, err := point.ReceiveMessageFromAny(res)
+	if err != nil {
+		return point.QuickErrorReceiveMessage(http.StatusInternalServerError, fmt.Errorf("Can't send response: %s ", err))
+	}
+
+	return &receiveMessage
 }

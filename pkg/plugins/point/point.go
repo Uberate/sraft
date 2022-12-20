@@ -4,17 +4,22 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/sirupsen/logrus"
 	"github.io/uberate/sraft/pkg/plugins"
+	"net/http"
 )
 
 // ==================================== Handler define
 
-type Handler func(message SendMessage) (*ReceiveMessage, error)
+type Handler func(path string, message SendMessage) *ReceiveMessage
 
 // ==================================== Define the message struct
 
 // SendMessage is the point send to server package.
 type SendMessage struct {
 	Body map[string]interface{}
+}
+
+func (sm *SendMessage) ToAny(obj any) error {
+	return mapstructure.Decode(sm.Body, obj)
 }
 
 func SendMessageFromAny(obj any) (SendMessage, error) {
@@ -41,14 +46,23 @@ func (e ErrorMessage) Error() string {
 
 // ReceiveMessage is the point server response of client.
 type ReceiveMessage struct {
-	code         int
+	Code         int
 	Response     map[string]interface{}
 	ErrorMessage ErrorMessage
 }
 
-// Code return the code of ErrorMessage. The Code follower the http.status code .
-func (e ReceiveMessage) Code() int {
-	return e.code
+func ReceiveMessageFromAny(obj any) (ReceiveMessage, error) {
+	value := map[string]interface{}{}
+	err := mapstructure.Decode(obj, &value)
+	if err != nil {
+		return ReceiveMessage{}, err
+	}
+
+	res := ReceiveMessage{
+		Code:     http.StatusOK,
+		Response: value,
+	}
+	return res, nil
 }
 
 func QuickErrorReceiveMessage(code int, err error) *ReceiveMessage {
@@ -57,7 +71,7 @@ func QuickErrorReceiveMessage(code int, err error) *ReceiveMessage {
 	}
 
 	return &ReceiveMessage{
-		code:         code,
+		Code:         code,
 		ErrorMessage: errMessage,
 	}
 }

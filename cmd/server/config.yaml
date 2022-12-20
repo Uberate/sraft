@@ -35,10 +35,10 @@ LogsStorageKind: memory_v1
 ## See config: [DataStoragePath]
 LogsStoragePath: _log
 
-## ======================== Cluster config info
-ClusterConfig:
-  ClusterElement:
-    - Id: second
-      Kind: http_v1
-      ClientConfig:
-        TargetPoint: 127.0.0.1:3000
+### ======================== Cluster config info
+#ClusterConfig:
+#  ClusterElement:
+#    - Id: second
+#      Kind: http_v1
+#      ClientConfig:
+#        TargetPoint: 127.0.0.1:3000
