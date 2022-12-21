@@ -9,7 +9,10 @@ import (
 
 func main() {
 	s := sraft.Server{}
-	sc := sraft.ServerConfig{}
+	sc := sraft.ServerConfig{
+		HeartbeatTimeoutBaseTime:  sraft.DefaultHeartbeatTimeoutBaseTime,
+		HeartbeatTimeoutRandRange: sraft.DefaultHeartbeatRandRange,
+	}
 
 	if err := cmd.ReadConfig(
 		"", "", "",

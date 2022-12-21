@@ -7,7 +7,9 @@ import (
 	"github.io/uberate/sraft/pkg/plugins"
 	"github.io/uberate/sraft/pkg/plugins/point"
 	"github.io/uberate/sraft/pkg/plugins/storage"
+	"math/rand"
 	"net/http"
+	"path"
 	"strconv"
 	"sync"
 	"time"
@@ -19,6 +21,8 @@ const (
 	DefaultDataLogPath    = "_data"
 	DefaultLogLogPath     = "_log"
 
+	NeedLock        = true
+	NotNeedLock     = false
 	NeedLeader      = true
 	NotNeedLeader   = false
 	NeedHighTerm    = true
@@ -28,6 +32,9 @@ const (
 
 	ErrRequestNeedLeaderStatus = "request need leader status to send"
 	ErrRequestNeedHighTerm     = "request need high term"
+
+	DefaultHeartbeatTimeoutBaseTime = int64(140 * time.Millisecond)
+	DefaultHeartbeatRandRange       = int64(20 * time.Millisecond)
 )
 
 // ServerConfig save all the server config(not contain the cluster config).
@@ -50,6 +57,9 @@ type ServerConfig struct {
 	LogsStoragePath    string
 	DataStoragePath    string
 	ClusterStoragePath string
+
+	HeartbeatTimeoutBaseTime  int64
+	HeartbeatTimeoutRandRange int64
 }
 
 type LogConfig struct {
@@ -106,7 +116,7 @@ type ClusterElement struct {
 // Status:
 // The serve has three status: FollowerStatus CandidateStatus LeaderStatus. For more status detail see Status.
 type Server struct {
-	singleLock *sync.Mutex
+	singleLock *sync.RWMutex
 
 	// raft value
 	currentTerm uint64
@@ -114,12 +124,16 @@ type Server struct {
 	votedFor    string
 
 	// server value
-	Id           string
-	logger       *logrus.Logger
-	status       Status
-	server       point.Server
-	serverConfig plugins.AnyConfig
-	serverKind   string
+	Id                        string
+	logger                    *logrus.Logger
+	lastBeat                  int64
+	randomHeartbeatTimeout    int64
+	HeartbeatTimeoutBaseTime  int64
+	HeartbeatTimeoutRandRange int64
+	status                    Status
+	server                    point.Server
+	serverConfig              plugins.AnyConfig
+	serverKind                string
 
 	// storage value
 	dataStorage       storage.Storage
@@ -137,12 +151,14 @@ type Server struct {
 	ClusterClients    map[string]point.Client
 
 	// channels
-	StopChan chan bool
+	StopChan       chan bool
+	heartbeatTimer *time.Ticker
+	electionTimer  *time.Ticker
 }
 
 func (s *Server) Init(config ServerConfig) error {
 
-	s.singleLock = &sync.Mutex{}
+	s.singleLock = &sync.RWMutex{}
 	s.currentTerm = 0
 
 	s.StopChan = make(chan bool, 0)
@@ -228,6 +244,7 @@ func (s *Server) Init(config ServerConfig) error {
 
 	// register handlers
 	s.server.Handler(s.PreHandle("/sraft/request-vote", NotProxy, NotNeedLeader, NeedHighTerm, s.VoteRequest))
+	s.server.Handler(s.PreHandle("/sraft/append-entry", NotProxy, NeedLeader, NeedHighTerm, s.AppendEntry))
 
 	// ==================================== init cluster info
 	s.ClusterConfigPath = config.ClusterStoragePath
@@ -245,8 +262,129 @@ func (s *Server) Init(config ServerConfig) error {
 		return err
 	}
 
+	// Init random time
+	s.HeartbeatTimeoutBaseTime = config.HeartbeatTimeoutBaseTime
+	s.HeartbeatTimeoutRandRange = config.HeartbeatTimeoutRandRange
+
 	logger.Info("Server init done")
 	return nil
+}
+
+func (s *Server) ReRandomHeartbeatTime() {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	s.randomHeartbeatTimeout = s.HeartbeatTimeoutBaseTime + r.Int63n(s.HeartbeatTimeoutRandRange)
+	s.logger.Infof("Re-rand heartbeat time: %d us", s.randomHeartbeatTimeout)
+}
+
+func (s *Server) ResetHeartbeat(currentTerm uint64) {
+	if s.heartbeatTimer == nil {
+		s.heartbeatTimer = time.NewTicker(time.Duration(s.randomHeartbeatTimeout))
+	} else {
+		s.heartbeatTimer.Reset(time.Duration(s.randomHeartbeatTimeout))
+	}
+}
+
+func (s *Server) StopListenHeartbeat() {
+	s.heartbeatTimer.Stop()
+}
+
+func (s *Server) LifeCycleRun() {
+	for {
+		s.logger.Debugf("Vote for: %s, current term: %d, now status: %s", s.votedFor, s.currentTerm, s.status)
+		switch s.status {
+		case FollowerStatus:
+			select {
+			case <-s.heartbeatTimer.C:
+				s.logger.Infof("Heart beat time out")
+				// time out
+				s.status = CandidateStatus
+				s.logger.Infof("Became the candidate")
+				s.ReRandomHeartbeatTime()
+			}
+		case CandidateStatus:
+			s.logger.Infof("New election occur")
+			s.currentTerm++
+
+			voteReceiveCount := 1
+			ignoreCount := 0
+			// vote should be: success when voteReceiveCount > (len(clients) - ignoreCount) / 2
+
+			voteLocker := sync.Mutex{}
+			body, err := point.SendMessageFromAny(CommonSRaftRequest{
+				CurrentTerm: s.currentTerm,
+				RequestId:   s.Id,
+			})
+			if err != nil {
+				s.logger.Errorf("Try to send request-vote err: %v", err)
+				break
+			}
+			for id, clientItem := range s.ClusterClients {
+				if id == s.Id {
+					ignoreCount++
+					continue
+				}
+				clientItem := clientItem
+				id := id
+				go func() {
+					s.logger.Infof("Send request-vote to: %s", id)
+					if _, err := clientItem.SendMessage("/sraft/request-vote", body); err == nil {
+						voteLocker.Lock()
+						defer voteLocker.Unlock()
+						voteReceiveCount++
+					} else {
+						s.logger.Error(err)
+					}
+				}()
+			}
+			s.logger.Tracef("Wait vote...")
+			select {
+			// send vote request
+			case <-s.heartbeatTimer.C:
+				if s.status == CandidateStatus {
+					if voteReceiveCount > ((len(s.ClusterClients) - ignoreCount) / 2) {
+						s.logger.Infof("Become leader")
+						s.votedFor = s.Id
+						s.status = LeaderStatus
+					} else {
+						s.logger.Infof("Election faild.")
+					}
+				}
+			}
+		case LeaderStatus:
+			select {
+			// send vote request
+			case <-s.heartbeatTimer.C:
+				for id, clientItem := range s.ClusterClients {
+					if id == s.Id {
+						continue
+					}
+					clientItem := clientItem
+					id := id
+					go func() {
+						// TODO: body should take a real log when has new log?
+						body, err := point.SendMessageFromAny(AppendEntryObject{
+							LogEntry: Log{
+								Path: "",
+							},
+							CommonSRaftRequest: CommonSRaftRequest{
+								CurrentTerm: s.currentTerm,
+								RequestId:   s.Id,
+							},
+						})
+						if err != nil {
+							s.logger.Errorf("Try to send request-vote err: %v", err)
+							return
+						}
+						s.logger.Infof("Send heart-beat to: %s", id)
+						if _, err := clientItem.SendMessage("/sraft/append-entry", body); err != nil {
+							s.logger.Error(err)
+						}
+					}()
+				}
+			}
+		}
+
+	}
 }
 
 func (s *Server) InitClusterPoints(config ClusterConfig) error {
@@ -283,6 +421,13 @@ func (s *Server) InitClusterPoints(config ClusterConfig) error {
 
 // Run the server
 func (s *Server) Run() error {
+
+	s.status = FollowerStatus
+	s.currentTerm = 0
+	s.ReRandomHeartbeatTime()
+	s.ResetHeartbeat(s.currentTerm)
+	go s.LifeCycleRun()
+
 	// start the server
 	go func() {
 		if err := s.server.Run(); err != nil {
@@ -309,11 +454,9 @@ type CommonSRaftRequest struct {
 	RequestId   string
 }
 
-type VoteReceiveObject struct {
-	CanVote bool
-}
-
 // PreHandle can generate a sraft handler
+//
+// needLock:    Define that specify handle should be sync for other handler.
 //
 // leaderProxy: Enable proxy request to leader, if it was NotProxy, use self handler. Else use CanProxy, will try to
 //				send request to leader.
@@ -324,10 +467,6 @@ type VoteReceiveObject struct {
 func (s *Server) PreHandle(path string, leaderProxy, leaderCheck, termCheck bool, handler point.Handler) (string, point.Handler) {
 	// todo, not the vote stage and not the cluster update stage
 	return path, func(path string, message point.SendMessage) *point.ReceiveMessage {
-
-		s.singleLock.Lock()
-		defer s.singleLock.Unlock()
-
 		s.logger.Debugf("Receive a request with path: [%s], leader proxy: [%v], leader check: [%v], term check"+
 			": [%v]", path, leaderProxy, leaderCheck, termCheck)
 		if leaderProxy {
@@ -347,21 +486,28 @@ func (s *Server) PreHandle(path string, leaderProxy, leaderCheck, termCheck bool
 		}
 
 		if leaderCheck || termCheck {
+
+			// TODO member check
+
 			commonRequest := CommonSRaftRequest{}
 			if err := message.ToAny(&commonRequest); err != nil {
 				return point.QuickErrorReceiveMessage(http.StatusBadRequest, err)
 			}
 
-			if leaderCheck {
+			s.logger.Debugf("Request base info: Id: %s, term: %d", commonRequest.RequestId, commonRequest.CurrentTerm)
+			s.logger.Debugf("Self base info: Id: %s, term: %d, VoteFor: %s", s.Id, s.currentTerm, s.votedFor)
+			// if local leader is none, skip it
+			if leaderCheck && len(s.votedFor) != 0 {
 				if commonRequest.RequestId != s.votedFor {
 					return point.QuickErrorReceiveMessage(http.StatusForbidden, fmt.Errorf(ErrRequestNeedLeaderStatus))
 				}
 			}
 
 			if termCheck {
-				if commonRequest.CurrentTerm <= s.currentTerm {
+				if commonRequest.CurrentTerm < s.currentTerm {
 					return point.QuickErrorReceiveMessage(http.StatusForbidden, fmt.Errorf(ErrRequestNeedHighTerm))
 				}
+				s.currentTerm = commonRequest.CurrentTerm
 			}
 		}
 
@@ -369,15 +515,26 @@ func (s *Server) PreHandle(path string, leaderProxy, leaderCheck, termCheck bool
 	}
 }
 
+type VoteReceiveObject struct {
+	CanVote bool
+}
+
 func (s *Server) VoteRequest(path string, message point.SendMessage) *point.ReceiveMessage {
+	if s.status == LeaderStatus || s.status == CandidateStatus {
+		s.status = FollowerStatus
+	}
+
 	voteRequest := CommonSRaftRequest{}
 	if err := message.ToAny(&voteRequest); err != nil {
 		return point.QuickErrorReceiveMessage(http.StatusBadRequest, fmt.Errorf("Parse body error: %s ", err))
 	}
 
+	s.logger.Infof("Receive vote request, target term: %d, id: %s", voteRequest.CurrentTerm, voteRequest.RequestId)
 	res := VoteReceiveObject{
 		CanVote: true,
 	}
+	s.votedFor = voteRequest.RequestId
+	s.currentTerm = voteRequest.CurrentTerm
 
 	receiveMessage, err := point.ReceiveMessageFromAny(res)
 	if err != nil {
@@ -385,4 +542,70 @@ func (s *Server) VoteRequest(path string, message point.SendMessage) *point.Rece
 	}
 
 	return &receiveMessage
+}
+
+type AppendEntryObject struct {
+	LogEntry Log
+
+	CommonSRaftRequest `mapstructure:",squash"`
+}
+
+type AppendEntryResponse struct {
+	CurrentTerm    uint64
+	LastCommit     uint64
+	LastAppend     uint64
+	LastAppendTerm uint64
+}
+
+func (s *Server) AppendEntry(path string, message point.SendMessage) *point.ReceiveMessage {
+	if s.status == LeaderStatus || s.status == CandidateStatus {
+		s.status = FollowerStatus
+	}
+
+	appendObject := &AppendEntryObject{}
+	if err := message.ToAny(&appendObject); err != nil {
+		return point.QuickErrorReceiveMessage(http.StatusBadRequest, err)
+	}
+
+	s.ResetHeartbeat(uint64(s.randomHeartbeatTimeout))
+
+	if len(s.votedFor) == 0 {
+		s.votedFor = appendObject.RequestId
+	}
+
+	if len(appendObject.LogEntry.Path) != 0 && s.logs.LastAppendAt == appendObject.LogEntry.Index-1 {
+		s.logs.LogEntries = append(s.logs.LogEntries, appendObject.LogEntry)
+	}
+
+	res, err := point.ReceiveMessageFromAny(s.toAppendEntryResponse())
+	if err != nil {
+		return point.QuickErrorReceiveMessage(http.StatusInternalServerError, err)
+	}
+	return &res
+}
+
+func (s *Server) toAppendEntryResponse() AppendEntryResponse {
+	return AppendEntryResponse{
+		CurrentTerm:    s.currentTerm,
+		LastAppend:     s.logs.LastAppendAt,
+		LastCommit:     s.logs.LastCommitted,
+		LastAppendTerm: s.logs.GetLastAppendTerm(),
+	}
+}
+
+func (s *Server) logToCommand(log Log) *Command {
+	fullPath := ""
+	switch log.Type {
+	case "data":
+		fullPath = path.Join(s.DataPath, log.Path)
+	case "cluster":
+		fullPath = path.Join(s.ClusterConfigPath, log.Path)
+	default:
+
+	}
+	return &Command{
+		FullPath: fullPath,
+		Value:    log.Value,
+		Action:   log.Action,
+	}
 }

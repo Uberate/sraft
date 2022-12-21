@@ -2,15 +2,26 @@ package sraft
 
 // Log is a part of sraft, not the log of system, log storage the Value change of status-machine.
 type Log struct {
-	Cmd      Command
+	Type     string
+	Action   string
+	Path     string
+	Value    string
+	Index    uint64
 	CreateBy string
-	CreateAt string
-	Term     string
+	CreateAt uint64
+	Term     uint64
 }
 
 type Logs struct {
-	LogEntries []Logs
+	LogEntries []Log
 
 	LastAppendAt  uint64
 	LastCommitted uint64
+}
+
+func (l *Logs) GetLastAppendTerm() uint64 {
+	if l.LastAppendAt == 0 {
+		return 0
+	}
+	return l.LogEntries[l.LastAppendAt-1].Term
 }

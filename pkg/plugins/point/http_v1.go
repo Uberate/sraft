@@ -8,6 +8,7 @@ import (
 	"github.io/uberate/sraft/pkg/plugins"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 )
 
 const HttpV1EngineKind = "http_v1"
@@ -24,7 +25,7 @@ func (h HttpV1Engine) Name() string {
 func (h HttpV1Engine) Client(id string, config plugins.AnyConfig, logger *logrus.Logger) (Client, error) {
 	client := HttpV1Client{
 		Id:     id,
-		Logger: logger,
+		logger: logger,
 	}
 
 	if err := config.ToAny(&client); err != nil {
@@ -56,7 +57,7 @@ func (h HttpV1Engine) Server(id string, config plugins.AnyConfig, logger *logrus
 // TargetPoint: String Specify a server point.
 type HttpV1Client struct {
 	Id     string         `mapstructure:"-"`
-	Logger *logrus.Logger `mapstructure:"-"`
+	logger *logrus.Logger `mapstructure:"-"`
 
 	// custom config
 	TargetPoint string
@@ -68,11 +69,19 @@ func (h *HttpV1Client) Name() string {
 
 func (h *HttpV1Client) SendMessage(path string, message SendMessage) (*ReceiveMessage, error) {
 	requestJson, err := json.Marshal(message)
+	h.logger.Debugf("Request Body: %s", string(requestJson))
 	if err != nil {
 		return nil, err
 	}
 
-	request, err := http.NewRequest(http.MethodPost, path, bytes.NewBuffer(requestJson))
+	target, err := url.Parse(h.TargetPoint)
+	if err != nil {
+		return nil, err
+	}
+
+	target.Path = path
+
+	request, err := http.NewRequest(http.MethodPost, target.String(), bytes.NewBuffer(requestJson))
 	if err != nil {
 		return nil, err
 	}
