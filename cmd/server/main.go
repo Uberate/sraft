@@ -12,6 +12,7 @@ func main() {
 	sc := sraft.ServerConfig{
 		HeartbeatTimeoutBaseTime:  sraft.DefaultHeartbeatTimeoutBaseTime,
 		HeartbeatTimeoutRandRange: sraft.DefaultHeartbeatRandRange,
+		ElectionTimoutAdditional:  sraft.DefaultElectionAdditional,
 	}
 
 	if err := cmd.ReadConfig(

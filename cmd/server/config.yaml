@@ -1,5 +1,5 @@
 # Default config for sraft server
-Id: First
+Id: Second
 HeartbeatTimeoutBaseTime: 250000000
 HeartbeatTimeoutRandRange: 50000000
 LogConfig:
@@ -13,7 +13,7 @@ LogConfig:
 PointKind: http_v1
 PointConfig:
   config:
-    Point: 127.0.0.1:3001
+    Point: 127.0.0.1:3002
 
 ## ======================== Data storage configs
 
@@ -50,3 +50,8 @@ ClusterConfig:
       ClientConfig:
         Config:
           TargetPoint: http://127.0.0.1:3001
+    - Id: Third
+      Kind: http_v1
+      ClientConfig:
+        Config:
+          TargetPoint: http://127.0.0.1:3003

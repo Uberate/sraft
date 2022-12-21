@@ -35,6 +35,7 @@ const (
 
 	DefaultHeartbeatTimeoutBaseTime = int64(140 * time.Millisecond)
 	DefaultHeartbeatRandRange       = int64(20 * time.Millisecond)
+	DefaultElectionAdditional       = int64(100 * time.Millisecond)
 )
 
 // ServerConfig save all the server config(not contain the cluster config).
@@ -60,6 +61,7 @@ type ServerConfig struct {
 
 	HeartbeatTimeoutBaseTime  int64
 	HeartbeatTimeoutRandRange int64
+	ElectionTimoutAdditional  int64
 }
 
 type LogConfig struct {
@@ -130,6 +132,7 @@ type Server struct {
 	randomHeartbeatTimeout    int64
 	HeartbeatTimeoutBaseTime  int64
 	HeartbeatTimeoutRandRange int64
+	ElectionTimoutAdditional  int64 // election timeout =HeartbeatTimeoutBaseTime + rand(HeartbeatTimeoutRandRange) + ElectionTimoutAdditional
 	status                    Status
 	server                    point.Server
 	serverConfig              plugins.AnyConfig
@@ -153,7 +156,6 @@ type Server struct {
 	// channels
 	StopChan       chan bool
 	heartbeatTimer *time.Ticker
-	electionTimer  *time.Ticker
 }
 
 func (s *Server) Init(config ServerConfig) error {
@@ -265,14 +267,15 @@ func (s *Server) Init(config ServerConfig) error {
 	// Init random time
 	s.HeartbeatTimeoutBaseTime = config.HeartbeatTimeoutBaseTime
 	s.HeartbeatTimeoutRandRange = config.HeartbeatTimeoutRandRange
+	s.ElectionTimoutAdditional = config.ElectionTimoutAdditional
 
 	logger.Info("Server init done")
 	return nil
 }
 
-func (s *Server) ReRandomHeartbeatTime() {
+func (s *Server) ReRandomHeartbeatTime(changed int64) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	s.randomHeartbeatTimeout = s.HeartbeatTimeoutBaseTime + r.Int63n(s.HeartbeatTimeoutRandRange)
+	s.randomHeartbeatTimeout = s.HeartbeatTimeoutBaseTime + r.Int63n(s.HeartbeatTimeoutRandRange) + changed
 	s.logger.Infof("Re-rand heartbeat time: %d us", s.randomHeartbeatTimeout)
 }
 
@@ -299,11 +302,12 @@ func (s *Server) LifeCycleRun() {
 				// time out
 				s.status = CandidateStatus
 				s.logger.Infof("Became the candidate")
-				s.ReRandomHeartbeatTime()
+
 			}
 		case CandidateStatus:
 			s.logger.Infof("New election occur")
 			s.currentTerm++
+			s.ReRandomHeartbeatTime(s.ElectionTimoutAdditional)
 
 			voteReceiveCount := 1
 			ignoreCount := 0
@@ -345,6 +349,7 @@ func (s *Server) LifeCycleRun() {
 						s.logger.Infof("Become leader")
 						s.votedFor = s.Id
 						s.status = LeaderStatus
+						go s.SendHeartBeats()
 					} else {
 						s.logger.Infof("Election faild.")
 					}
@@ -354,37 +359,47 @@ func (s *Server) LifeCycleRun() {
 			select {
 			// send vote request
 			case <-s.heartbeatTimer.C:
-				for id, clientItem := range s.ClusterClients {
-					if id == s.Id {
-						continue
-					}
-					clientItem := clientItem
-					id := id
-					go func() {
-						// TODO: body should take a real log when has new log?
-						body, err := point.SendMessageFromAny(AppendEntryObject{
-							LogEntry: Log{
-								Path: "",
-							},
-							CommonSRaftRequest: CommonSRaftRequest{
-								CurrentTerm: s.currentTerm,
-								RequestId:   s.Id,
-							},
-						})
-						if err != nil {
-							s.logger.Errorf("Try to send request-vote err: %v", err)
-							return
-						}
-						s.logger.Infof("Send heart-beat to: %s", id)
-						if _, err := clientItem.SendMessage("/sraft/append-entry", body); err != nil {
-							s.logger.Error(err)
-						}
-					}()
-				}
+				go s.SendHeartBeats()
 			}
 		}
 
 	}
+}
+
+func (s *Server) SendHeartBeats() {
+	wg := sync.WaitGroup{}
+	wg.Add(len(s.ClusterClients))
+	for id, clientItem := range s.ClusterClients {
+		if id == s.Id {
+			wg.Done()
+			continue
+		}
+		clientItem := clientItem
+		id := id
+		go func() {
+			defer wg.Done()
+			// TODO: body should take a real log when has new log?
+			body, err := point.SendMessageFromAny(AppendEntryObject{
+				LogEntry: Log{
+					Path: "",
+				},
+				CommonSRaftRequest: CommonSRaftRequest{
+					CurrentTerm: s.currentTerm,
+					RequestId:   s.Id,
+				},
+			})
+			if err != nil {
+				s.logger.Errorf("Try to send request-vote err: %v", err)
+				return
+			}
+			s.logger.Infof("Send heart-beat to: %s", id)
+			if _, err := clientItem.SendMessage("/sraft/append-entry", body); err != nil {
+				s.logger.Error(err)
+			}
+		}()
+	}
+
+	wg.Wait()
 }
 
 func (s *Server) InitClusterPoints(config ClusterConfig) error {
@@ -424,7 +439,7 @@ func (s *Server) Run() error {
 
 	s.status = FollowerStatus
 	s.currentTerm = 0
-	s.ReRandomHeartbeatTime()
+	s.ReRandomHeartbeatTime(0)
 	s.ResetHeartbeat(s.currentTerm)
 	go s.LifeCycleRun()
 
