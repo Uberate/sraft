@@ -292,6 +292,7 @@ func (s *Server) StopListenHeartbeat() {
 }
 
 func (s *Server) LifeCycleRun() {
+	s.logger.Infof("SRaft [%s] life cycle run.", s.Id)
 	for {
 		s.logger.Debugf("Vote for: %s, current term: %d, now status: %s", s.votedFor, s.currentTerm, s.status)
 		switch s.status {
@@ -305,7 +306,7 @@ func (s *Server) LifeCycleRun() {
 
 			}
 		case CandidateStatus:
-			s.logger.Infof("New election occur")
+			s.logger.Infof("New leader election")
 			s.currentTerm++
 			s.ReRandomHeartbeatTime(s.ElectionTimoutAdditional)
 
@@ -330,11 +331,12 @@ func (s *Server) LifeCycleRun() {
 				clientItem := clientItem
 				id := id
 				go func() {
-					s.logger.Infof("Send request-vote to: %s", id)
+					s.logger.Infof("Send request-vote to: [%s]", id)
 					if _, err := clientItem.SendMessage("/sraft/request-vote", body); err == nil {
 						voteLocker.Lock()
 						defer voteLocker.Unlock()
 						voteReceiveCount++
+						s.logger.Infof("Receive vote from: [%s]", id)
 					} else {
 						s.logger.Error(err)
 					}
@@ -362,7 +364,6 @@ func (s *Server) LifeCycleRun() {
 				go s.SendHeartBeats()
 			}
 		}
-
 	}
 }
 
