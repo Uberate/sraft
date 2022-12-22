@@ -16,7 +16,7 @@ const (
 	ConfigPathDirDefaultEnvKey     = "CONFIG_DIR_PATH"
 	ConfigPathFileDefaultFlag      = "config"
 	ConfigPathFileDefaultShortFlag = "c"
-	ConfigDefaultPath              = "~/config/config.yaml"
+	ConfigDefaultPath              = "~/config/node-1.yaml"
 )
 
 // ReadConfig will load the config from the env or file, it can receive the default value. And the first read env value.
@@ -88,7 +88,7 @@ func ReadConfig(
 //
 // The search order is : env -> flag-short-key -> flag key
 //
-// If the function search all default value is empty, will try to search the file: ~/config/config.yaml
+// If the function search all default value is empty, will try to search the file: ~/config/node-1.yaml
 //
 // The GetConfigFilePath can search some file type like yaml, json, toml and so on. If all file has no value, will
 // return emtpy string and false. Else return the readable file path and true.
