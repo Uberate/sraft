@@ -149,9 +149,11 @@ type Server struct {
 	LogsStorageConfig plugins.AnyConfig
 
 	// cluster value
-	ClusterConfigPath string // CLusterConfigPath was storage in data storage.
-	ClusterConfig     ClusterConfig
-	ClusterClients    map[string]point.Client
+	ClusterConfigPath    string // CLusterConfigPath was storage in data storage.
+	ClusterConfig        ClusterConfig
+	ClusterClients       map[string]point.Client
+	ClientsNextAppend    map[string]uint64
+	ClientsLastCommitted map[string]uint64
 
 	// channels
 	StopChan       chan bool
@@ -263,14 +265,32 @@ func (s *Server) Init(config ServerConfig) error {
 	if err := s.InitClusterPoints(config.ClusterConfig); err != nil {
 		return err
 	}
+	s.ClientsNextAppend = map[string]uint64{}
+	s.ClientsLastCommitted = map[string]uint64{}
 
-	// Init random time
+	// ==================================== Init random time
 	s.HeartbeatTimeoutBaseTime = config.HeartbeatTimeoutBaseTime
 	s.HeartbeatTimeoutRandRange = config.HeartbeatTimeoutRandRange
 	s.ElectionTimoutAdditional = config.ElectionTimoutAdditional
 
 	logger.Info("Server init done")
 	return nil
+}
+
+func (s *Server) NextAppend(clientId string) Log {
+	index := uint64(0)
+	if value, ok := s.ClientsNextAppend[clientId]; ok {
+		index = value
+	}
+
+	if len(s.logs.LogEntries) == 0 || index == s.logs.NextAppend-1 {
+		return Log{}
+	}
+	return s.logs.LogEntries[index]
+}
+
+func (s *Server) UpdateClientAppendIndex(clientId string, clientNextAppend uint64) {
+	s.ClientsNextAppend[clientId] = clientNextAppend
 }
 
 func (s *Server) ReRandomHeartbeatTime(changed int64) {
@@ -351,7 +371,7 @@ func (s *Server) LifeCycleRun() {
 						s.logger.Infof("Become leader")
 						s.votedFor = s.Id
 						s.status = LeaderStatus
-						go s.SendHeartBeats()
+						go s.SendAppendLogEntriesRPC()
 					} else {
 						s.logger.Infof("Election faild.")
 					}
@@ -361,13 +381,13 @@ func (s *Server) LifeCycleRun() {
 			select {
 			// send vote request
 			case <-s.heartbeatTimer.C:
-				go s.SendHeartBeats()
+				go s.SendAppendLogEntriesRPC()
 			}
 		}
 	}
 }
 
-func (s *Server) SendHeartBeats() {
+func (s *Server) SendAppendLogEntriesRPC() {
 	wg := sync.WaitGroup{}
 	wg.Add(len(s.ClusterClients))
 	for id, clientItem := range s.ClusterClients {
@@ -379,23 +399,25 @@ func (s *Server) SendHeartBeats() {
 		id := id
 		go func() {
 			defer wg.Done()
-			// TODO: body should take a real log when has new log?
-			body, err := point.SendMessageFromAny(AppendEntryObject{
-				LogEntry: Log{
-					Path: "",
-				},
-				CommonSRaftRequest: CommonSRaftRequest{
-					CurrentTerm: s.currentTerm,
-					RequestId:   s.Id,
-				},
-			})
+
+			appendEntry := s.NextAppend("0")
+
+			body, err := point.SendMessageFromAny(appendEntry)
 			if err != nil {
 				s.logger.Errorf("Try to send request-vote err: %v", err)
 				return
 			}
 			s.logger.Infof("Send heart-beat to: %s", id)
-			if _, err := clientItem.SendMessage("/sraft/append-entry", body); err != nil {
+			if res, err := clientItem.SendMessage("/sraft/append-entry", body); err != nil {
 				s.logger.Error(err)
+			} else {
+				s.logger.Debugf("%v", res)
+				//resObject := AppendEntryResponse{}
+				//if err := res.ToAny(&res); err != nil {
+				//	s.logger.Error("Append entry to [%s] err: %v", id, err)
+				//	return
+				//}
+				//s.UpdateClientAppendIndex(id, resObject.NextAppend)
 			}
 		}()
 	}
@@ -568,8 +590,8 @@ type AppendEntryObject struct {
 
 type AppendEntryResponse struct {
 	CurrentTerm    uint64
-	LastCommit     uint64
-	LastAppend     uint64
+	NextCommit     uint64
+	NextAppend     uint64
 	LastAppendTerm uint64
 }
 
@@ -589,8 +611,9 @@ func (s *Server) AppendEntry(path string, message point.SendMessage) *point.Rece
 		s.votedFor = appendObject.RequestId
 	}
 
-	if len(appendObject.LogEntry.Path) != 0 && s.logs.LastAppendAt == appendObject.LogEntry.Index-1 {
+	if len(appendObject.LogEntry.Path) != 0 {
 		s.logs.LogEntries = append(s.logs.LogEntries, appendObject.LogEntry)
+		s.logs.NextAppend++
 	}
 
 	res, err := point.ReceiveMessageFromAny(s.toAppendEntryResponse())
@@ -602,10 +625,9 @@ func (s *Server) AppendEntry(path string, message point.SendMessage) *point.Rece
 
 func (s *Server) toAppendEntryResponse() AppendEntryResponse {
 	return AppendEntryResponse{
-		CurrentTerm:    s.currentTerm,
-		LastAppend:     s.logs.LastAppendAt,
-		LastCommit:     s.logs.LastCommitted,
-		LastAppendTerm: s.logs.GetLastAppendTerm(),
+		CurrentTerm: s.currentTerm,
+		NextAppend:  s.logs.NextAppend,
+		NextCommit:  s.logs.NextCommitted,
 	}
 }
 

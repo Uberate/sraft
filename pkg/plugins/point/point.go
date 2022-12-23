@@ -51,6 +51,10 @@ type ReceiveMessage struct {
 	ErrorMessage ErrorMessage
 }
 
+func (rm ReceiveMessage) ToAny(obj any) error {
+	return mapstructure.Decode(rm.Response, obj)
+}
+
 func ReceiveMessageFromAny(obj any) (ReceiveMessage, error) {
 	value := map[string]interface{}{}
 	err := mapstructure.Decode(obj, &value)
@@ -107,6 +111,12 @@ var points = map[string]Point{
 	HttpV1Engine{}.Name(): HttpV1Engine{}, // HttpV1Engine
 }
 
+// RegisterPoint will append or cover a point instance to inner point set. GetPoint will get point from this set.
+func RegisterPoint(instance Point) {
+	points[instance.Name()] = instance
+}
+
+// GetPoint will return specify point instance from inner set by name. And not found specify point, return false.
 func GetPoint(name string) (Point, bool) {
 	res, ok := points[name]
 	return res, ok

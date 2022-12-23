@@ -15,13 +15,13 @@ type Log struct {
 type Logs struct {
 	LogEntries []Log
 
-	LastAppendAt  uint64
-	LastCommitted uint64
+	NextAppend    uint64
+	NextCommitted uint64
 }
 
 func (l *Logs) GetLastAppendTerm() uint64 {
-	if l.LastAppendAt == 0 {
+	if l.NextAppend == 0 {
 		return 0
 	}
-	return l.LogEntries[l.LastAppendAt-1].Term
+	return l.LogEntries[l.NextAppend-1].Term
 }
