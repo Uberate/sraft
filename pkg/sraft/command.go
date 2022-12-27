@@ -6,6 +6,12 @@ import (
 	"strings"
 )
 
+const (
+	CommandActionPut    = "put"
+	CommandActionDelete = "delete"
+	CommandActionSet    = "set"
+)
+
 // Command save the Value change info.
 type Command struct {
 	FullPath string
@@ -16,11 +22,11 @@ type Command struct {
 func (cmd *Command) Exec(storage storage.Storage) error {
 	action := strings.ToLower(cmd.Action)
 	switch action {
-	case "put":
+	case CommandActionPut:
 		storage.Put(cmd.FullPath, cmd.Value)
-	case "delete":
+	case CommandActionDelete:
 		storage.Delete(cmd.FullPath)
-	case "set":
+	case CommandActionSet:
 		storage.Set(cmd.FullPath, cmd.Value)
 	default:
 		return fmt.Errorf("Unknown Action: %s, support put, delete, set. ", cmd.Action)

@@ -12,6 +12,7 @@ type Log struct {
 	Term     uint64
 }
 
+// TODO delete
 type Logs struct {
 	LogEntries []Log
 

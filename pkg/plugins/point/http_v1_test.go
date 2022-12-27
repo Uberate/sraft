@@ -1,7 +1,7 @@
 package point
 
 import (
-	"github.io/uberate/sraft/tests"
+	"github.com/sirupsen/logrus"
 	"testing"
 	"time"
 )
@@ -10,7 +10,7 @@ func QuickHttpV1Server() *HttpV1Server {
 	return &HttpV1Server{
 		stopChan:    make(chan bool, 0),
 		alreadyStop: make(chan bool, 0),
-		logger:      tests.QuickTestLogger(),
+		logger:      logrus.New(),
 		handlers:    map[string]Handler{},
 
 		Point: "127.0.0.1:9867",
