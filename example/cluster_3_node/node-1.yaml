@@ -1,7 +1,5 @@
 # Default config for sraft server
 Id: node-1
-HeartbeatTimeoutBaseTime: 250000000
-HeartbeatTimeoutRandRange: 50000000
 LogConfig:
   DisableTimestamp: false
   DisableColor: false
@@ -9,10 +7,15 @@ LogConfig:
   Level: Trace
   TimestampFormat: "2006-01-02T15:04:05Z07:00"
 
+TimeoutBase: 150
+TimeoutRange: 50
+
+
 ## ======================== Server point config
-PointKind: http_v1
-PointConfig:
-  config:
+
+ServerPointKind: http_v1
+ServerPointConf:
+  Config:
     Point: 127.0.0.1:3001
 
 ## ======================== Data storage configs
@@ -21,14 +24,19 @@ PointConfig:
 ##
 ## Data storage kinds:
 ## memory_v1: Quick and data not safe on machine.
-DataStorageKind: memory_v1
+StorageKind: memory_v1
 
 ## DataStoragePath define the data path in storage. Default is _data.
-DataStoragePath: _data
+StorageConf: _data
+
+#DataStoragePath: ""
+#LogStoragePath: ""
+#ClusterStoragePath: ""
 
 ## Different storage has different configs, for more detail, see TODO
 DataStorageConfig:
-  Empty: empty
+  Config:
+    Empty: empty
 
 ## ======================== Log storage configs
 

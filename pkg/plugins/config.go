@@ -4,7 +4,7 @@ import "github.com/mitchellh/mapstructure"
 
 // AnyConfig abstract the config of other struct.
 type AnyConfig struct {
-	Config map[string]string `json:"config" yaml:"config"`
+	Config map[string]string `json:"-" yaml:"-" mapstructure:"config"`
 }
 
 // MergeAny will merge Value from x to inner config. If the data conflicts, set the Value of x.

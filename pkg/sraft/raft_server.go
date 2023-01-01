@@ -40,28 +40,28 @@ const (
 
 // ServerConfigOld save all the server config(not contain the cluster config).
 type ServerConfigOld struct {
-	Id string `json:"id" yaml:"id"`
+	Id string `json:"id" yaml:"id" mapstructure:"id"`
 
-	PointKind   string
-	PointConfig plugins.AnyConfig
+	PointKind   string            `mapstructure:"point_kind"`
+	PointConfig plugins.AnyConfig `mapstructure:"point_config"`
 
-	ClusterConfig ClusterConfig
+	ClusterConfig ClusterConfig `mapstructure:"cluster_config"`
 
-	LogConfig LogConfig
+	LogConfig LogConfig `mapstructure:"log_config"`
 
-	DataStorageKind   string
-	DataStorageConfig plugins.AnyConfig
+	DataStorageKind   string            `mapstructure:"data_storage_kind"`
+	DataStorageConfig plugins.AnyConfig `mapstructure:"data_storage_config"`
 
-	LogsStorageKind   string
-	LogsStorageConfig plugins.AnyConfig
+	LogsStorageKind   string            `mapstructure:"logs_storage_kind"`
+	LogsStorageConfig plugins.AnyConfig `mapstructure:"logs_storage_config"`
 
-	LogsStoragePath    string
-	DataStoragePath    string
-	ClusterStoragePath string
+	LogsStoragePath    string `mapstructure:"logs_storage_path"`
+	DataStoragePath    string `mapstructure:"data_storage_path"`
+	ClusterStoragePath string `mapstructure:"cluster_storage_path"`
 
-	HeartbeatTimeoutBaseTime  int64
-	HeartbeatTimeoutRandRange int64
-	ElectionTimoutAdditional  int64
+	HeartbeatTimeoutBaseTime  int64 `mapstructure:"heartbeat_timeout_base_time"`
+	HeartbeatTimeoutRandRange int64 `mapstructure:"heartbeat_timeout_rand_range"`
+	ElectionTimoutAdditional  int64 `mapstructure:"election_timout_additional"`
 }
 
 // ClusterConfig save the cluster config.

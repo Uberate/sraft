@@ -12,8 +12,7 @@ LogConfig:
 ## ======================== Server point config
 PointKind: http_v1
 PointConfig:
-  config:
-    Point: 127.0.0.1:3001
+  Point: 127.0.0.1:3001
 
 ## ======================== Data storage configs
 
@@ -43,5 +42,4 @@ ClusterConfig:
     - Id: base
       Kind: http_v1
       ClientConfig:
-        Config:
-          TargetPoint: http://127.0.0.1:3001
+        TargetPoint: http://127.0.0.1:3001
